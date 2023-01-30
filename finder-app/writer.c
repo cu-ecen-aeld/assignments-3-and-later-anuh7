@@ -29,7 +29,7 @@ int main ( int argc, char *argv[])
 
 	if (fd==-1)
 	{
-		syslog(LOG_ERR, "File does not exist. Please create file first");
+		syslog(LOG_ERR, "File %s does not exist. Please create file first", argv[1]);
 		return 1;
 	}
 	
@@ -37,15 +37,18 @@ int main ( int argc, char *argv[])
 	
 	if (write_return == -1)
 	{
-		syslog(LOG_ERR, "Unable to write to given file");
+		syslog(LOG_ERR, "Unable to write %s to the given file %s.", argv[2], argv[1]);
 		return 1;
 	}
 
 	else if ( write_return != strlen(argv[2]))
 	{
-		syslog(LOG_ERR, "Program has written only %ld out %ld words", write_return, write_bytes);
+		syslog(LOG_ERR, "Partial Write: Program has written only %ld out %ld words", write_return, write_bytes);
 		return 1;
 	}
+	
+	
+	syslog(LOG_DEBUG, "Wrote %s to %s.", argv[2], argv[1]);
 
 	close(fd);
 	closelog();
