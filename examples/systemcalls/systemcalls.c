@@ -20,7 +20,7 @@ bool do_system(const char *cmd)
 	int system_return;
 	
 	system_return = system (cmd);
-	if (system_return == -1)
+	if (cmd == NULL || system_return != 0)
 	{
 		return false;
 	}
