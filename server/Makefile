@@ -1,28 +1,22 @@
+# Makefile for Assignment 5
+CROSS_COMPILE =
 ifeq ($(CC),)
 	CC = $(CROSS_COMPILE)gcc
 endif
-
 ifeq ($(CFLAGS),)
-	CFLAGS = -g -Werror -Wall
+	CFLAGS = -g -Wall -Werror -pthread
 endif
-
 ifeq ($(LDFLAGS),)
 	LDFLAGS = -pthread -lrt
 endif
 
-SRC		= $(wildcard *.c)
-OBJS	= $(SRC:.c=.o)
-EXE		= aesdsocket
+SRC := aesdsocket.c
+TARGET ?= aesdsocket
 
-all: $(EXE)
+all: $(TARGET)
 
-${EXE}: $(OBJS)
-	$(CC) -o $@ $^ ${LDFLAGS}
-
-%.o: %.c
-	$(CC) -c ${CFLAGS} $< -o $@
-
-.PHONY: clean
+$(TARGET) : $(SRC)
+	$(CC) $(CFLAGS) -o $(TARGET) aesdsocket.c $(LDFLAGS)
 
 clean:
-	rm -rf *.o ${EXE}
+	-rm -f *.o $(TARGET) *.elf *.map
