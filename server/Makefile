@@ -1,21 +1,28 @@
-CROSS_COMPILE =
 ifeq ($(CC),)
 	CC = $(CROSS_COMPILE)gcc
 endif
+
 ifeq ($(CFLAGS),)
-	CFLAGS = -g -Wall -Werror -pthread
+	CFLAGS = -g -Werror -Wall
 endif
+
 ifeq ($(LDFLAGS),)
 	LDFLAGS = -pthread -lrt
 endif
 
-SRC := aesdsocket.c
-TARGET ?= aesdsocket
+SRC		= $(wildcard *.c)
+OBJS	= $(SRC:.c=.o)
+EXE		= aesdsocket
 
-all: $(TARGET)
+all: $(EXE)
 
-$(TARGET) : $(SRC)
-	$(CC) $(CFLAGS) -o $(TARGET) aesdsocket.c $(LDFLAGS)
+${EXE}: $(OBJS)
+	$(CC) -o $@ $^ ${LDFLAGS}
+
+%.o: %.c
+	$(CC) -c ${CFLAGS} $< -o $@
+
+.PHONY: clean
 
 clean:
-	-rm -f *.o $(TARGET) *.elf *.map
+	rm -rf *.o ${EXE}
