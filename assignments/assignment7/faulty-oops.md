@@ -56,3 +56,17 @@ Code: d2800001 d2800000 d503233f d50323bf (b900003f)
 - sp, x29 - x0 are the stack pointer and GP registers.
 - The call stack also shows how each function is executed in reverse order and where the PC has been interrupted. 
 
+### Objump:
+- Using objump, the following is received:
+
+0000000000000000 <faulty_write>:
+  0:   d503245f        bti     c
+  4:   d2800001        mov     x1, #0x0                        // #0
+  8:   d2800000        mov     x0, #0x0                        // #0
+  c:   d503233f        paciasp
+10:   d50323bf        autiasp
+14:   b900003f        str     wzr, [x1]
+18:   d65f03c0        ret
+1c:   d503201f        nop
+
+- Here, we can see the offset (0x14) is where the null pointer is deferenced. This way we can find the source of the mistake. 
