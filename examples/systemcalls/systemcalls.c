@@ -17,6 +17,14 @@ bool do_system(const char *cmd)
  *   or false() if it returned a failure
 */
 
+	int system_return;
+	
+	system_return = system (cmd);
+	if (cmd == NULL || system_return != 0)
+	{
+		return false;
+	}
+
     return true;
 }
 
@@ -59,6 +67,52 @@ bool do_exec(int count, ...)
  *
 */
 
+    int status;
+    pid_t child_pid;
+    
+    child_pid = fork();
+    
+    if (child_pid == -1)
+    {
+    	printf("Unable to create process");
+	perror ("fork");    
+	return -1;
+    }
+   
+    if (child_pid == 0)
+    {
+       int exec_return =  execv( command[0], command);
+
+       if (exec_return == -1)
+       {
+		perror("execv error");
+	 	exit(1);	
+       }
+    }	    
+
+    if (child_pid > 0)
+    {
+    pid_t wait_return = waitpid (child_pid, &status, 0);
+    
+    if (wait_return == -1)
+    {
+    	printf("cannot perform wait command, error");
+	perror("wait");
+	return -1;
+    }    
+
+    if (WIFEXITED (status))
+    {
+    	if (WEXITSTATUS (status) != 0)
+	{
+		return false;
+	}
+    }
+    else
+    {
+    	return false;
+    }
+    }	
     va_end(args);
 
     return true;
@@ -92,6 +146,51 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *   The rest of the behaviour is same as do_exec()
  *
 */
+    pid_t c_pid;
+    int fd;
+    int w_status;
+
+    fd = open (outputfile, O_WRONLY|O_TRUNC|O_CREAT, 0644);
+
+    if (fd < 0)
+	    return -1;
+
+    c_pid = fork();
+    switch (c_pid)
+    {
+    	case -1: 
+		return -1;
+	case 0:
+		if (dup2(fd,1) <0)
+		{
+			close(fd);
+			exit(EXIT_FAILURE);
+		}
+		
+		int ret = execv(command[0], command);
+        	if (ret == -1)
+			exit (-1);
+	default:
+		 close(fd);
+	         if (waitpid (c_pid, &w_status, 0) == -1)
+		 {
+		        return -1;
+		 }
+    		
+		 if (WIFEXITED (w_status))
+		 {
+		 	if (WEXITSTATUS (w_status) != 0)
+			{
+				return -1;
+			}
+
+		 }
+
+    		else
+		{
+			return -1;
+		}
+    }
 
     va_end(args);
 
