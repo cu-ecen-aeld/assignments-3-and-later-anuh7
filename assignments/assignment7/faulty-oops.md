@@ -1,3 +1,7 @@
+### command: echo “hello_world” > /dev/faulty 
+#output:
+
+```
 Unable to handle kernel NULL pointer dereference at virtual address 0000000000000000
 Mem abort info:
   ESR = 0x96000045
@@ -42,9 +46,13 @@ Call trace:
  el0t_64_sync+0x1a0/0x1a4
 Code: d2800001 d2800000 d503233f d50323bf (b900003f) 
 ---[ end trace 242234af86be55c7 ]---
+```
 
-Analysis:
-The oops message is generated because the faulty_write function is trying to dereference a NULL pointer. This is shown in the call trace first line: faulty_write+0x14/0x20 [faulty]. This is indicated in the error message: Unable to handle kernel NULL pointer dereference at virtual address.
-The faulty module tries to call the faulty_write function at address 0x14(20 bytes). The function size of 32 bytes(0x20).
-The call stack also shows how each function is executed in reverse order and where the PC has been interrupted. 
+### Analysis:
+- The oops message is generated because the faulty_write function is trying to dereference a NULL pointer. This is shown in the call trace first line: faulty_write+0x14/0x20 [faulty]. This is indicated in the error message: Unable to handle kernel NULL pointer dereference at virtual address.
+- The section after that (mem abort info:) and (data abort info:), contains register values where the failure has occured.
+- The next secion includes information about the page table information, error reason, CPU core and PID of the fault. 
+- ```pc : faulty_write+0x14/0x20 [faulty]``` indicates that the faulty module tries to call the faulty_write function at address 0x14(20 bytes). The function size is of 32 bytes(0x20).
+- sp, x29 - x0 are the stack pointer and GP registers.
+- The call stack also shows how each function is executed in reverse order and where the PC has been interrupted. 
 
