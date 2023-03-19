@@ -24,7 +24,7 @@
 int aesd_major =   0; // use dynamic major
 int aesd_minor =   0;
 
-MODULE_AUTHOR("Anuhya Kuraparthy"); /** TODO: fill in your name **/
+MODULE_AUTHOR("Anuhya Kuraparthy"); 
 MODULE_LICENSE("Dual BSD/GPL");
 
 struct aesd_dev aesd_device;
@@ -41,6 +41,7 @@ int aesd_open(struct inode *inode, struct file *filp)
 int aesd_release(struct inode *inode, struct file *filp)
 {
     PDEBUG("release");
+    filp->private_data = NULL;
     return 0;
 }
 
@@ -61,7 +62,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     
     if( tmp_buf == NULL )
     {
-        *f_pos = 0;
+       // *f_pos = 0;
         goto handle_error;
     }
     
@@ -104,6 +105,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     int extra;			//tmp_total_size
     
     PDEBUG("write %zu bytes with offset %lld",count,*f_pos);
+    
     dev = filp->private_data;
     mutex_lock(&aesd_device.lock);
     
@@ -212,7 +214,8 @@ int aesd_init_module(void)
     int result;
     result = alloc_chrdev_region(&dev, aesd_minor, 1, "aesdchar");
     aesd_major = MAJOR(dev);
-    if (result < 0) {
+    if (result < 0) 
+    {
         printk(KERN_WARNING "Can't get major %d\n", aesd_major);
         return result;
     }
@@ -220,7 +223,8 @@ int aesd_init_module(void)
     mutex_init(&aesd_device.lock);
     result = aesd_setup_cdev(&aesd_device);
 
-    if( result ) {
+    if(result)
+    {
         unregister_chrdev_region(dev, 1);
     }
     return result;
@@ -233,9 +237,15 @@ void aesd_cleanup_module(void)
     struct aesd_buffer_entry *ptr;
     dev_t devno = MKDEV(aesd_major, aesd_minor);
     cdev_del(&aesd_device.cdev);
+    
     AESD_CIRCULAR_BUFFER_FOREACH(ptr, &aesd_device.buffer, index)
     {
-        kfree(ptr->buffptr);
+    	if (ptr->buffptr != NULL)
+    	{
+    		kfree(ptr->buffptr);
+    		ptr->size = 0;
+    	}
+        
     }
     mutex_destroy(&aesd_device.lock);
     unregister_chrdev_region(devno, 1);
