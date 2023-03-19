@@ -18,11 +18,12 @@
 
 #define SIZE (3)
 
-#define USE_AESD_CHAR_DEVICE	(1)
-#if (USE_AESD_CHAR_DEVICE == 1)
-	#define FILE_PATH	"/dev/aesdchar"
+#define USE_AESD_CHAR_DEVICE
+
+#ifdef USE_AESD_CHAR_DEVICE
+#define FILE_PATH ("/dev/aesdchar")
 #else
-    	#define FILE_PATH	"/var/tmp/aesdsocketdata"
+#define FILE_PATH ("/var/tmp/aesdsocketdata")
 #endif
 
 int server_socket_fd;
