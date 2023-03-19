@@ -79,7 +79,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     if( copy_to_user(buf, tmp_buf->buffptr+offset_bytes, tmp_buf_count))
     {
         retval = -EFAULT;
-        goto cleanup;
+        goto handle_error;
     }
     
     retval = tmp_buf_count;
@@ -93,14 +93,15 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
 ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
                 loff_t *f_pos)
 {
-    char *tmp_buf;
-    bool packet_flag = false;
-    struct aesd_dev *dev;
-    int packet_len = 0;
-    struct aesd_buffer_entry write_entry;
-    char *ret;
+    char *tmp_buf;		//tmp_buffer
+    bool packet_flag = false;	//packet_send
+    struct aesd_dev *dev;	//dev
+    int packet_len = 0;	//tmp_store
+    struct aesd_buffer_entry write_entry;	//write_buffer
+    char *ret;			//replaced_buffer
     int i;
-    ssize_t retval = 0;
+    ssize_t retval = 0;	//?
+    int extra;			//tmp_total_size
     
     PDEBUG("write %zu bytes with offset %lld",count,*f_pos);
     dev = filp->private_data;
@@ -129,9 +130,9 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         }
     }
     
-    if( dev->buff_size == 0 )
+    if( dev->buff_size == 0 )		//buffer_length
     {
-        dev->buff_ptr = (char *)kmalloc(count, GFP_KERNEL);
+        dev->buff_ptr = (char *)kmalloc(count, GFP_KERNEL);	//store_buffer
         if( dev->buff_ptr == NULL )
         {
             retval = -ENOMEM;
@@ -142,7 +143,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     }
     else
     {
-        int extra;
+       
         if(packet_flag)
         {
             extra = packet_len;
@@ -157,7 +158,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
             retval = -ENOMEM;
             goto free_memory;
         }
-        memcpy(dev->buff_ptr, tmp_buf, extra);
+        memcpy(dev->buff_ptr + dev->buff_size, tmp_buf, extra);	//
         dev->buff_size += extra;
     }
     
@@ -166,6 +167,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         write_entry.buffptr = dev->buff_ptr;
         write_entry.size = dev->buff_size;
         ret = aesd_circular_buffer_add_entry(&dev->buffer, &write_entry);
+        
         if( ret != NULL )
         {
             kfree(ret);
@@ -174,10 +176,12 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     }
     
     retval = count;
-    free_memory: kfree(tmp_buf);
+    free_memory : kfree(tmp_buf);
     end : mutex_unlock(&aesd_device.lock);
     return retval;
 }
+
+
 struct file_operations aesd_fops = {
     .owner =    THIS_MODULE,
     .read =     aesd_read,
