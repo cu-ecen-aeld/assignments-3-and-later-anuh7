@@ -18,6 +18,13 @@
 
 #define SIZE (3)
 
+#define USE_AESD_CHAR_DEVICE
+
+#ifdef USE_AESD_CHAR_DEVICE
+#define FILE_PATH ("/dev/aesdchar")
+#else
+#define FILE_PATH ("/var/tmp/aesdsocketdata")
+#endif
 
 int server_socket_fd;
 int socket_file_fd;
@@ -73,11 +80,13 @@ void signal_handler(int signum)
         syslog(LOG_DEBUG, "Caught signal SIGTERM, exiting!!");
         e_status = 1;
     }
+    
     else if(signum == SIGALRM)
     {
         syslog(LOG_DEBUG, "Caught signal SIGALRM!!");
         timeout = true;
     }
+
 }
 
 
@@ -228,7 +237,10 @@ int main(int argc, char *argv[])
     openlog(NULL, 0, LOG_USER);
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
+    
+#if (USE_AESD_CHAR_DEVICE==0)   
     signal(SIGALRM, signal_handler);
+#endif
     
     bool is_daemon = false;
 
@@ -305,7 +317,7 @@ int main(int argc, char *argv[])
     addr_size = sizeof their_addr;
 
 	
-    socket_file_fd = open( "/var/tmp/aesdsocketdata", O_RDWR | O_CREAT | O_APPEND, 0666);
+    socket_file_fd = open(FILE_PATH, O_RDWR | O_CREAT | O_APPEND, 0666);
 
 
 
@@ -387,7 +399,7 @@ int main(int argc, char *argv[])
     printf("All threads exited!!\n");
     close(server_socket_fd);
     close(socket_file_fd);
-    unlink("/var/tmp/aesdsocketdata"); 
+    unlink(FILE_PATH); 
     pthread_mutex_destroy(&mtx);
     timer_delete(timer);
     closelog();

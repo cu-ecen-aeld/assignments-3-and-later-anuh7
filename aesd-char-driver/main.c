@@ -1,0 +1,257 @@
+/**
+ * @file aesdchar.c
+ * @brief Functions and data related to the AESD char driver implementation
+ *
+ * Based on the implementation of the "scull" device driver, found in
+ * Linux Device Drivers example code.
+ *
+ * @author Dan Walkes
+ * @date 2019-10-22
+ * @copyright Copyright (c) 2019
+ *
+ */
+
+#include <linux/module.h>
+#include <linux/init.h>
+#include <linux/printk.h>
+#include <linux/types.h>
+#include <linux/cdev.h>
+#include <linux/fs.h> // file_operations
+#include "aesdchar.h"
+#include "linux/slab.h"
+#include "linux/string.h"
+
+int aesd_major =   0; // use dynamic major
+int aesd_minor =   0;
+
+MODULE_AUTHOR("Anuhya Kuraparthy"); 
+MODULE_LICENSE("Dual BSD/GPL");
+
+struct aesd_dev aesd_device;
+
+int aesd_open(struct inode *inode, struct file *filp)
+{
+    struct aesd_dev *dev;
+    PDEBUG("open");
+    dev = container_of(inode->i_cdev, struct aesd_dev, cdev);
+    filp->private_data = dev;
+    return 0;
+}
+
+int aesd_release(struct inode *inode, struct file *filp)
+{
+    PDEBUG("release");
+    filp->private_data = NULL;
+    return 0;
+}
+
+ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
+                loff_t *f_pos)
+{
+    ssize_t retval = 0;
+    struct aesd_dev *dev;
+    struct aesd_buffer_entry *tmp_buf;
+    int tmp_buf_count = 0;
+    size_t offset_bytes;
+    dev = filp->private_data;
+    
+    PDEBUG("read %zu bytes with offset %lld",count,*f_pos);
+    
+    mutex_lock(&aesd_device.lock);
+    tmp_buf = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->buffer, *f_pos, &offset_bytes);
+    
+    if( tmp_buf == NULL )
+    {
+       // *f_pos = 0;
+        goto handle_error;
+    }
+    
+    if( (tmp_buf->size - offset_bytes) < count )
+    {
+        *f_pos += tmp_buf->size - offset_bytes;
+        tmp_buf_count = tmp_buf->size - offset_bytes;
+    }
+    else
+    {
+        *f_pos += count;
+        tmp_buf_count = count;
+    }
+    
+    if( copy_to_user(buf, tmp_buf->buffptr+offset_bytes, tmp_buf_count))
+    {
+        retval = -EFAULT;
+        goto handle_error;
+    }
+    
+    retval = tmp_buf_count;
+
+    handle_error : mutex_unlock(&aesd_device.lock);
+    
+
+    return retval;
+}
+
+ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
+                loff_t *f_pos)
+{
+    char *tmp_buf;		//tmp_buffer
+    bool packet_flag = false;	//packet_send
+    struct aesd_dev *dev;	//dev
+    int packet_len = 0;	//tmp_store
+    struct aesd_buffer_entry write_entry;	//write_buffer
+    char *ret;			//replaced_buffer
+    int i;
+    ssize_t retval = 0;	//?
+    int extra;			//tmp_total_size
+    
+    PDEBUG("write %zu bytes with offset %lld",count,*f_pos);
+    
+    dev = filp->private_data;
+    mutex_lock(&aesd_device.lock);
+    
+    tmp_buf = (char *)kmalloc(count, GFP_KERNEL);
+    if( tmp_buf == NULL )
+    {
+        retval = -ENOMEM;
+        goto end;
+    }
+    
+    if(copy_from_user(tmp_buf, buf, count))
+    {
+        retval = -EFAULT;
+        goto free_memory;
+    }
+    
+    for(i=0; i< count; i++)
+    {
+        if(tmp_buf[i] == '\n')
+        {
+            packet_flag = true;
+            packet_len = i+1;
+            break;
+        }
+    }
+    
+    if( dev->buff_size == 0 )		//buffer_length
+    {
+        dev->buff_ptr = (char *)kmalloc(count, GFP_KERNEL);	//store_buffer
+        if( dev->buff_ptr == NULL )
+        {
+            retval = -ENOMEM;
+            goto free_memory;
+        }
+        memcpy(dev->buff_ptr, tmp_buf, count);
+        dev->buff_size += count;
+    }
+    else
+    {
+       
+        if(packet_flag)
+        {
+            extra = packet_len;
+        }
+        else
+        {
+            extra = count;
+        }
+        dev->buff_ptr = (char *)krealloc(dev->buff_ptr, dev->buff_size + extra , GFP_KERNEL);
+        if( dev->buff_ptr == NULL )
+        {
+            retval = -ENOMEM;
+            goto free_memory;
+        }
+        memcpy(dev->buff_ptr + dev->buff_size, tmp_buf, extra);	//
+        dev->buff_size += extra;
+    }
+    
+    if(packet_flag)
+    {
+        write_entry.buffptr = dev->buff_ptr;
+        write_entry.size = dev->buff_size;
+        ret = aesd_circular_buffer_add_entry(&dev->buffer, &write_entry);
+        
+        if( ret != NULL )
+        {
+            kfree(ret);
+        }
+        dev->buff_size = 0;
+    }
+    
+    retval = count;
+    free_memory : kfree(tmp_buf);
+    end : mutex_unlock(&aesd_device.lock);
+    return retval;
+}
+
+
+struct file_operations aesd_fops = {
+    .owner =    THIS_MODULE,
+    .read =     aesd_read,
+    .write =    aesd_write,
+    .open =     aesd_open,
+    .release =  aesd_release,
+};
+
+static int aesd_setup_cdev(struct aesd_dev *dev)
+{
+    int err, devno = MKDEV(aesd_major, aesd_minor);
+
+    cdev_init(&dev->cdev, &aesd_fops);
+    dev->cdev.owner = THIS_MODULE;
+    dev->cdev.ops = &aesd_fops;
+    err = cdev_add (&dev->cdev, devno, 1);
+    if (err) {
+        printk(KERN_ERR "Error %d adding aesd cdev", err);
+    }
+    return err;
+}
+
+
+
+int aesd_init_module(void)
+{
+    dev_t dev = 0;
+    int result;
+    result = alloc_chrdev_region(&dev, aesd_minor, 1, "aesdchar");
+    aesd_major = MAJOR(dev);
+    if (result < 0) 
+    {
+        printk(KERN_WARNING "Can't get major %d\n", aesd_major);
+        return result;
+    }
+    memset(&aesd_device,0,sizeof(struct aesd_dev));
+    mutex_init(&aesd_device.lock);
+    result = aesd_setup_cdev(&aesd_device);
+
+    if(result)
+    {
+        unregister_chrdev_region(dev, 1);
+    }
+    return result;
+
+}
+
+void aesd_cleanup_module(void)
+{
+    int index;
+    struct aesd_buffer_entry *ptr;
+    dev_t devno = MKDEV(aesd_major, aesd_minor);
+    cdev_del(&aesd_device.cdev);
+    
+    AESD_CIRCULAR_BUFFER_FOREACH(ptr, &aesd_device.buffer, index)
+    {
+    	if (ptr->buffptr != NULL)
+    	{
+    		kfree(ptr->buffptr);
+    		ptr->size = 0;
+    	}
+        
+    }
+    mutex_destroy(&aesd_device.lock);
+    unregister_chrdev_region(devno, 1);
+}
+
+
+
+module_init(aesd_init_module);
+module_exit(aesd_cleanup_module);

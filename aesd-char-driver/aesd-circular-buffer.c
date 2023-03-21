@@ -33,13 +33,12 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
 	bool entry = false;
 	struct aesd_buffer_entry *ret = NULL;
 	int i = 0;
+	int index = buffer->out_offs;
 	
 	
    	if(!buffer || !entry_offset_byte_rtn)
     		return NULL;
     	
-    	int index = buffer->out_offs;
-
 	if  (buffer->full)
 		i = AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
 		
@@ -72,7 +71,6 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
 	
 	return ret;
 }
-
 /**
 * Adds entry @param add_entry to @param buffer in the location specified in buffer->in_offs.
 * If the buffer was already full, overwrites the oldest entry and advances buffer->out_offs to the
@@ -80,33 +78,32 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
 * Any necessary locking must be handled by the caller
 * Any memory referenced in @param add_entry must be allocated by and/or must have a lifetime managed by the caller.
 */
-void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const struct aesd_buffer_entry *add_entry)
+char *aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const struct aesd_buffer_entry *add_entry)
 {
-    if (!buffer || !add_entry)
-    	return;
-    
-    buffer->entry[buffer->in_offs].size = add_entry->size;
-    buffer->entry[buffer->in_offs].buffptr = add_entry->buffptr;
-    
-    buffer->in_offs++;
-    buffer->in_offs %= AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+    char *ret = NULL;
     
     if(buffer->full)
-    {
+    {	
+    	ret = (char *)buffer->entry[buffer->in_offs].buffptr;
+    	buffer->entry[buffer->in_offs].size = add_entry->size;
+    	buffer->entry[buffer->in_offs].buffptr = add_entry->buffptr;
+    	buffer->in_offs++;
+   	buffer->in_offs %= AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
     	buffer->out_offs++;
     	buffer->out_offs %= AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
     }
-    
-    
-    if(buffer->in_offs == buffer->out_offs)
+    else
     {
-    	buffer->full = true;
-    }
-    else 
-    {
-    	buffer->full = false;
-    }
-    
+    	buffer->entry[buffer->in_offs].size = add_entry->size;
+    	buffer->entry[buffer->in_offs].buffptr = add_entry->buffptr;
+    	buffer->in_offs++;
+   	buffer->in_offs %= AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+        if(buffer->in_offs == buffer->out_offs)
+    	{
+    		buffer->full = true;
+    	}
+    }	
+    return ret;
 }
 
 /**
