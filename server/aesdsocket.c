@@ -15,6 +15,8 @@
 #include <pthread.h>
 #include <time.h>
 
+#include "../aesd-char-driver/aesd_ioctl.h"
+
 
 #define SIZE (3)
 
@@ -24,6 +26,11 @@
 #define FILE_PATH ("/dev/aesdchar")
 #else
 #define FILE_PATH ("/var/tmp/aesdsocketdata")
+#endif
+
+
+#ifdef USE_AESD_CHAR_DEVICE					//////
+const char * ioctl_cmd = "AESDCHAR_IOCSEEKTO:";
 #endif
 
 int server_socket_fd;
@@ -183,20 +190,38 @@ void *thread_func( void *thread_param )
     memcpy(total_buffer + (num * SIZE), buffer, received_length);
     num++;
     }
-
-    lseek(socket_file_fd, 0, SEEK_END);
-
-    pthread_mutex_lock(&mtx);
-
-    int write_return = write(socket_file_fd, total_buffer, total_buffer_length);
-    if( write_return == -1)
+    
+    
+    if(strncmp(total_buffer, ioctl_cmd, strlen(ioctl_cmd)) == 0)
     {
-        syslog(LOG_ERR, "write");
+    	struct aesd_seekto seekto;
+    	
+    	sscanf(total_buffer, "AESDCHAR_IOCSEEKTO:%d, %d", &seekto.write_cmd, &seekto.write_cmd_offset);
+    	
+    	if(ioctl(socket_file_fd, AESDCHAR_IOCSEEKTO, &seekto))
+    	{
+    		printf("ioctl failed");
+    	}
     }
-    data_count += write_return;
+    
+    else
+    {
+    	// lseek(socket_file_fd, 0, SEEK_END);
 
-    memset(buffer, '\0', SIZE);
-    lseek(socket_file_fd, 0, SEEK_SET);
+    	pthread_mutex_lock(&mtx);
+
+    	int write_return = write(socket_file_fd, total_buffer, total_buffer_length);
+    	if( write_return == -1)
+    	{
+    	    syslog(LOG_ERR, "write");
+    	}
+    	data_count += write_return;
+	
+    	memset(buffer, '\0', SIZE);
+    }
+
+
+   // lseek(socket_file_fd, 0, SEEK_SET);
     int read_return;
 
     char *buffer_read = (char *)malloc(SIZE);
@@ -237,9 +262,9 @@ int main(int argc, char *argv[])
     openlog(NULL, 0, LOG_USER);
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
-    
-#if (USE_AESD_CHAR_DEVICE==0)   
-    signal(SIGALRM, signal_handler);
+
+#ifndef USE_AESD_CHAR_DEVICE					//////
+	signal(SIGALRM, signal_handler);
 #endif
     
     bool is_daemon = false;
