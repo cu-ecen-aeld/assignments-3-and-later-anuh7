@@ -67,7 +67,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     
     if( tmp_buf == NULL )
     {
-       // *f_pos = 0;
+       *f_pos = 0;
         goto handle_error;
     }
     
@@ -200,7 +200,7 @@ static long aesd_adjust_file_offset(struct file *filp, unsigned int write_cmd, u
 	
 	PDEBUG("aesd_adjust_file_offset");
 	
-	mutex_lock(&aesd_device.lock);
+	mutex_lock_interruptible(&aesd_device.lock);
 	
 	AESD_CIRCULAR_BUFFER_FOREACH(tmp_buf, &dev->buffer, commands)
 	{
@@ -234,21 +234,27 @@ long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	
 	PDEBUG("aesd_ioctl");
 	
-	if (_IOC_TYPE(cmd) != AESD_IOC_MAGIC) return -ENOTTY;
-	if (_IOC_NR(cmd) > AESDCHAR_IOC_MAXNR) return -ENOTTY;
+	if (_IOC_TYPE(cmd) != AESD_IOC_MAGIC) 
+		return -ENOTTY;
+	if (_IOC_NR(cmd) > AESDCHAR_IOC_MAXNR) 
+		return -ENOTTY;
 
 	switch(cmd)
 	{
 		case AESDCHAR_IOCSEEKTO:
 			{
 				if (copy_from_user(&seekto, (const void __user *)arg, sizeof(seekto)) != 0)
+				{
 					return_value = -EFAULT;
+				}
 				else
+				{
 					return_value = aesd_adjust_file_offset(filp, seekto.write_cmd, seekto.write_cmd_offset);
+				}
 				break;
 			}
 		default:
-			return_value = -EINVAL;		//? enotty
+			return_value = -ENOTTY;		
 			break;
 	}
 	
@@ -263,14 +269,14 @@ loff_t aesd_llseek(struct file *filp, loff_t offset, int whence)
     struct aesd_buffer_entry *entry = NULL;
     int index = 0;
     
-    //size = dev->buffer.buffer_size;				///////
-    mutex_lock(&aesd_device.lock);
+    mutex_lock_interruptible(&aesd_device.lock);
     
     AESD_CIRCULAR_BUFFER_FOREACH(entry, &dev->buffer, index)
 		size += entry->size;
 
     
     return_value = fixed_size_llseek(filp, offset, whence, size);
+    
     mutex_unlock(&aesd_device.lock);
 
     return return_value;
@@ -285,7 +291,7 @@ struct file_operations aesd_fops = {
     .open =     aesd_open,
     .release =  aesd_release,
     .llseek = 	aesd_llseek,
-    .unlocked_ioctl = aesd_ioctl
+    .unlocked_ioctl = aesd_ioctl,
 };
 
 static int aesd_setup_cdev(struct aesd_dev *dev)

@@ -23,24 +23,24 @@
 #define USE_AESD_CHAR_DEVICE
 
 #ifdef USE_AESD_CHAR_DEVICE
-#define FILE_PATH ("/dev/aesdchar")
+char* file_path = "/dev/aesdchar";
 #else
-#define FILE_PATH ("/var/tmp/aesdsocketdata")
+char* file_path = "/var/tmp/aesdsocketdata";
 #endif
+					
+const char* ioctl_cmd = "AESDCHAR_IOCSEEKTO:";
 
-
-#ifdef USE_AESD_CHAR_DEVICE					//////
-const char * ioctl_cmd = "AESDCHAR_IOCSEEKTO:";
-#endif
 
 int server_socket_fd;
 int socket_file_fd;
 int data_count;
 pthread_mutex_t mtx;
 int e_status = 0;
+
+#ifndef USE_AESD_CHAR_DEVICE
 bool timeout = false;
 timer_t timer;
-
+#endif
 
 typedef struct 
 {
@@ -58,9 +58,10 @@ typedef struct node
 } node_t;
 
 
-
+#ifndef USE_AESD_CHAR_DEVICE
 void timestamp();
 int timer_init();
+#endif
 
 int sll_insert( node_t **head, node_t *new_node)
 {
@@ -88,11 +89,13 @@ void signal_handler(int signum)
         e_status = 1;
     }
     
+     #ifndef USE_AESD_CHAR_DEVICE
     else if(signum == SIGALRM)
     {
         syslog(LOG_DEBUG, "Caught signal SIGALRM!!");
         timeout = true;
     }
+    #endif
 
 }
 
@@ -149,7 +152,13 @@ void *thread_func( void *thread_param )
     while(!received)
     {
         received_length = 0;
-        recv(thread_data->fd, &buffer, SIZE, 0);
+        int recv_return = recv(thread_data->fd, &buffer, SIZE, 0);
+        
+        if (recv_return == -1)
+        {
+        	syslog(LOG_ERR, "recv");
+        	goto error;
+        }
 
         for(int i=0; i< SIZE; i++)
         {
@@ -191,6 +200,11 @@ void *thread_func( void *thread_param )
     num++;
     }
     
+    lseek(socket_file_fd, 0, SEEK_END);
+    
+    pthread_mutex_lock(&mtx);
+    
+    int new_socket_file_fd = open(file_path, O_RDWR | O_CREAT | O_APPEND, S_IWUSR | S_IRUSR | S_IWGRP | S_IRGRP | S_IROTH | S_IWOTH );			////
     
     if(strncmp(total_buffer, ioctl_cmd, strlen(ioctl_cmd)) == 0)
     {
@@ -198,7 +212,7 @@ void *thread_func( void *thread_param )
     	
     	sscanf(total_buffer, "AESDCHAR_IOCSEEKTO:%d, %d", &seekto.write_cmd, &seekto.write_cmd_offset);
     	
-    	if(ioctl(socket_file_fd, AESDCHAR_IOCSEEKTO, &seekto))
+    	if(ioctl(new_socket_file_fd, AESDCHAR_IOCSEEKTO, &seekto))
     	{
     		printf("ioctl failed");
     	}
@@ -206,23 +220,22 @@ void *thread_func( void *thread_param )
     
     else
     {
-    	// lseek(socket_file_fd, 0, SEEK_END);
-
-    	pthread_mutex_lock(&mtx);
-
-    	int write_return = write(socket_file_fd, total_buffer, total_buffer_length);
+       int write_return = write(new_socket_file_fd, total_buffer, total_buffer_length);
     	if( write_return == -1)
     	{
     	    syslog(LOG_ERR, "write");
     	}
-    	data_count += write_return;
-	
-    	memset(buffer, '\0', SIZE);
+    	data_count += write_return;	
     }
 
-
-   // lseek(socket_file_fd, 0, SEEK_SET);
+   memset(buffer, '\0', SIZE);
+   
+   #ifndef USE_AESD_CHAR_DEVICE
+   lseek(socket_file_fd, 0, SEEK_SET);
+   #endif
+      
     int read_return;
+    
 
     char *buffer_read = (char *)malloc(SIZE);
 
@@ -230,7 +243,7 @@ void *thread_func( void *thread_param )
     {
         syslog(LOG_ERR, "malloc");
     }
-    while( (read_return = read(socket_file_fd, buffer_read, SIZE))>0)			
+    while( (read_return = read(new_socket_file_fd, buffer_read, SIZE))>0)			
     {
  
         int bytes_sent = send(thread_data->fd, buffer_read, read_return, 0);
@@ -238,7 +251,7 @@ void *thread_func( void *thread_param )
         if (bytes_sent == -1) 
         {
             syslog(LOG_ERR, "Error: send()");
-            break;
+            goto free_buffer;
         }
     }
     pthread_mutex_unlock(&mtx);
@@ -248,8 +261,8 @@ void *thread_func( void *thread_param )
         syslog(LOG_ERR, "Error: read() with code, %d", errno);
     }
     
-    free(buffer_read);
-    free(total_buffer);
+    free_buffer : free(buffer_read);
+    error : free(total_buffer);
     close(thread_data->fd);
     thread_data->complete_flag = true;
     syslog(LOG_DEBUG, "Closed connection from %s", inet_ntop(AF_INET, &p->sin_addr, ip_string, sizeof(ip_string)));
@@ -342,15 +355,16 @@ int main(int argc, char *argv[])
     addr_size = sizeof their_addr;
 
 	
-    socket_file_fd = open(FILE_PATH, O_RDWR | O_CREAT | O_APPEND, 0666);
+    socket_file_fd = open(file_path, O_RDWR | O_CREAT | O_APPEND, 0666);	/////
 
 
-
+    #ifndef USE_AESD_CHAR_DEVICE
     ret = timer_init();
     if(ret == -1)
     {
         perror("timer creation");
     }
+    #endif
 
     pthread_mutex_init(&mtx, NULL);
 
@@ -359,11 +373,14 @@ int main(int argc, char *argv[])
 
     while(!e_status)
     {
+    	#ifndef USE_AESD_CHAR_DEVICE
         if(timeout)
         {
             timeout = false;
             timestamp();
         }
+        #endif
+        
         int client_socket_fd  = accept(server_socket_fd, (struct sockaddr *)&their_addr, &addr_size);
         if( client_socket_fd  == -1 )
         {
@@ -424,14 +441,16 @@ int main(int argc, char *argv[])
     printf("All threads exited!!\n");
     close(server_socket_fd);
     close(socket_file_fd);
-    unlink(FILE_PATH); 
     pthread_mutex_destroy(&mtx);
+    #ifndef USE_AESD_CHAR_DEVICE
+    unlink("/var/tmp/aesdsocketdata"); 		//////
     timer_delete(timer);
+    #endif
     closelog();
     return 0;
 }
 
-
+#ifndef USE_AESD_CHAR_DEVICE
 void timestamp()
 {
     time_t timestamp;
@@ -468,3 +487,4 @@ int timer_init()
 
     return 0;
 }
+#endif
