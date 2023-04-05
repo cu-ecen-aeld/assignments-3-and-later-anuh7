@@ -16,7 +16,7 @@ TARGET ?= aesdsocket
 all: $(TARGET)
 
 $(TARGET) : $(SRC)
-	$(CC) $(CFLAGS) -o $(TARGET) aesdsocket.c $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $(TARGET) aesdsocket.c $(INCLUDES) $(LDFLAGS)
 
 clean:
 	-rm -f *.o $(TARGET) *.elf *.map
